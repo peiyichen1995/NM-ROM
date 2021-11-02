@@ -11,7 +11,7 @@ dolfin.parameters['linear_algebra_backend'] = 'Eigen'
 
 nu = 1e-4  # the viscosity
 
-N = 60
+N = 80
 poddim = 25
 
 t0, tE, Nts = 0., 1., 101  # the time grid for the snapshots
