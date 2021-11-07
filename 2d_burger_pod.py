@@ -9,18 +9,18 @@ from ldfnp_ext_cholmod import SparseFactorMassmat
 
 dolfin.parameters['linear_algebra_backend'] = 'Eigen'
 
-nu = 1e-4  # the viscosity
+nu = 1.0  # the viscosity
 
-N = 80
+N = 20
 poddim = 25
 
-t0, tE, Nts = 0., 1., 101  # the time grid for the snapshots
+t0, tE, Nts = 0., 1., 1001  # the time grid for the snapshots
 timegrid = np.linspace(t0, tE, Nts)
 
 plt.style.use('bmh')
 vmax = 2.5  # uniform scaling for the plot colors
 nplts = 4  # number of plots
-pltgrid = [x*np.int(np.floor(Nts/(nplts-1))) for x in range(nplts)]
+pltgrid = [x*np.int(np.floor(Nts/(nplts-1)))+10 for x in range(nplts)]
 
 # The mesh
 pone = dolfin.Point(-1, -1)
