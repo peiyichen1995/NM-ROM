@@ -14,7 +14,7 @@ nu = 1.0  # the viscosity
 N = 20
 poddim = 25
 
-t0, tE, Nts = 0., 1., 1001  # the time grid for the snapshots
+t0, tE, Nts = 0., 1., 101  # the time grid for the snapshots
 timegrid = np.linspace(t0, tE, Nts)
 
 plt.style.use('bmh')
@@ -103,11 +103,15 @@ inivexpr = dolfin.Expression((inivstrg, inivstrg), degree=2)
 inivfunc = dolfin.interpolate(inivexpr, V)
 inivvec = inivfunc.vector().get_local()
 
+print('solving ivp...')
+
 burgsol = solve_ivp(brhs, (t0, tE), inivvec, t_eval=timegrid, method='RK23')
 # burgsol = solve_ivp(brhs, (t0, tE), inivvec, t_eval=timegrid, method='BDF')
 # burgsol = solve_ivp(brhs, (t0, tE), inivvec, t_eval=timegrid, method='Radau')
 # burgsol = solve_ivp(brhs, (t0, tE), inivvec, t_eval=timegrid, method='LSODA')
 # burgsol = solve_ivp(brhs, (t0, tE), inivvec, t_eval=timegrid)
+
+print('done')
 
 if not burgsol.status == 0:
     print(burgsol.message)  # for some parameters there might be shocks
