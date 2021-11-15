@@ -6,6 +6,7 @@ import scipy.linalg as spla
 import matplotlib.pyplot as plt
 from solvers import CustomSolver
 from problems import CustomProblem
+from scipy.integrate import solve_ivp
 
 def burgers_time_viscous ( e_num, nu ):
 
@@ -199,7 +200,7 @@ def burgers_time_viscous ( e_num, nu ):
 
   return snapshots
 
-def pod(snapshots, nu):
+def pod(snapshots, nu, e_num):
     podmodes, svals, _ = spla.svd(snapshots, full_matrices=False)
     filename = ( 'burgers_viscous_%g.png' % ( nu ) )
     plt.semilogy(svals, '.')
@@ -215,7 +216,122 @@ def pod(snapshots, nu):
         poddim += 1
         err = 1 - np.sum(svals[:poddim])/np.sum(svals)
 
-    print(poddim)
+    print('POD dimension: ' + str(poddim))
+
+    selected_podmodes = podmodes[:, :poddim]
+
+    x_left = 0.0
+    x_right = +2.0
+    mesh = IntervalMesh ( e_num, x_left, x_right )
+
+    t_num = 1000
+    k = 0
+    t = 0.0
+
+    t_plot = 0.0
+    t_final = 0.5
+
+    timegrid = np.linspace(t, t_final, t_num)
+
+    V = FunctionSpace ( mesh, "CG", 1)
+    # snapshots = np.zeros((e_num+1, t_num+1))
+
+    u_left = +1.0
+    def on_left ( x, on_boundary ):
+      return ( on_boundary and near ( x[0], x_left ) )
+    bc_left = DirichletBC ( V, u_left, on_left )
+
+    u_right = +1.0
+    def on_right ( x, on_boundary ):
+      return ( on_boundary and near ( x[0], x_right ) )
+    bc_right = DirichletBC ( V, u_right, on_right )
+
+    bc = [ bc_left, bc_right ]
+
+  #  Define the initial condition.
+    u_init = Expression ( "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree = 1, A = nu/2 )
+
+  #
+  #  Define the trial functions (u) and test functions (v).
+  #
+    u = Function ( V )
+    u_old = Function ( V )
+    v = TestFunction ( V )
+
+  #
+  #  Set U and U0 by interpolation.
+  #
+    u.interpolate ( u_init )
+    u_old.assign ( u )
+
+
+  #
+  #  Set the time step.
+  #  We need a UFL version "DT" for the function F,
+  #  and a Python version "dt" to do a conditional in the time loop.
+  #
+
+
+    DT = Constant ( t_final/t_num )
+    dt = t_final/t_num
+  #
+  #  Set the source term.
+  #
+    f = Expression ( "0.0", degree = 0 )
+  #
+  #  Write the function to be satisfied.
+  #
+    n = FacetNormal ( mesh )
+  #
+  #  Write the function F.
+  #
+
+    F = \
+    ( \
+      dot ( u - u_old, v ) / DT \
+    + inner ( u * u.dx(0), v ) \
+    - dot ( f, v ) \
+    ) * dx
+  #
+  #  Specify the jacobian.
+  #
+    J = derivative ( F, u )
+
+    J_mat = assemble(J)
+    J_array = J_mat.array()
+    J_red = np.matmul(selected_podmodes.T, J_array)
+    J_red = np.matmul(J_red, selected_podmodes)
+
+    def burgers_nonl_func(ufun):
+        print(ufun)
+        exit()
+        cform = inner(grad(ufun)*ufun, v)*dx
+        cass = assemble(cform)
+        return cass
+
+
+    # as a vector to vector map
+    def burgers_nonl_vec(uvec):
+        ufun = Function(V)
+        ufun.vector().set_local(uvec)
+        bnlform = burgers_nonl_func(ufun)
+        bnlvec = bnlform.get_local()
+        return bnlvec
+
+    def redbrhs(time, redvec):
+        inflatedv = selected_podmodes.dot(redvec)
+        redconv = selected_podmodes.T.dot(burgers_nonl_vec(inflatedv))
+        return -J_red.dot(redvec) - redconv.flatten()
+
+
+    u = u.vector().get_local()
+    u = np.matmul(selected_podmodes.T, u)
+
+    redburgsol = solve_ivp(redbrhs, (t, t_final), u,
+                           t_eval=timegrid, method='RK23')
+
+    return redburgsol
+
 
 def burgers_time_viscous_test ( ):
 
@@ -249,7 +365,7 @@ def burgers_time_viscous_test ( ):
   # print ( '  FENICS/Python version' )
   # print ( '  Solve the time-dependent 1d viscous Burgers equation.' )
 
-  e_num = 1000
+  e_num = 10
   # nu = 0.05
   # nus = [1/10**i for i in range(11)]
   nus = [1.0]
@@ -257,7 +373,8 @@ def burgers_time_viscous_test ( ):
       print( 'nu = %g' % ( nu ) )
       snapshots = burgers_time_viscous ( e_num, nu )
       # svd
-      pod(snapshots, nu)
+      solution = pod(snapshots, nu, e_num)
+      print(len(solution))
 #
 #  Terminate.
 #
