@@ -7,9 +7,11 @@ import matplotlib.pyplot as plt
 from solvers import CustomSolver
 from problems import CustomProblem
 from scipy.integrate import solve_ivp
+from numpy.linalg import inv
 import dolfin
 
 dolfin.parameters['linear_algebra_backend'] = 'Eigen'
+
 
 def burgers_time_viscous(e_num, nu):
 
@@ -176,7 +178,7 @@ def pod(snapshots, nu, e_num):
     plt.close()
 
     # find pod dimension
-    err_tol = 1e-5
+    err_tol = 1e-3
     poddim = 1
     err = 1 - np.sum(svals[:poddim]) / np.sum(svals)
     while (err > err_tol):
@@ -197,70 +199,37 @@ def pod(snapshots, nu, e_num):
 
     t_plot = 0.0
     t_final = 0.5
+    dt = t_final / t_num
 
     timegrid = np.linspace(t, t_final, t_num)
 
     V = FunctionSpace(mesh, "CG", 1)
 
-    #  Define the initial condition.
-    u_init = Expression(
-        "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree=1, A=nu / 2)
-
     #
     #  Define the trial functions (u) and test functions (v).
     #
     u = Function(V)
-    u_old = Function(V)
     v = TestFunction(V)
 
-    #
-    #  Set U and U0 by interpolation.
-    #
-    u.interpolate(u_init)
-    u_old.assign(u)
+    test = dot(u, v) * dx
+    M = derivative(test, u)
+    Mass = assemble(M)
+    Mmat = Mass.array()
+    Mred = np.matmul(selected_podmodes.T, Mmat)
+    Mred = np.matmul(Mred, selected_podmodes)
+    Mredinv = inv(Mred)
 
-    #
-    #  Set the time step.
-    #  We need a UFL version "DT" for the function F,
-    #  and a Python version "dt" to do a conditional in the time loop.
-    #
-
-    DT = Constant(t_final / t_num)
-    dt = t_final / t_num
-    #
-    #  Set the source term.
-    #
-    f = Expression("0.0", degree=0)
-    #
-    #  Write the function to be satisfied.
-    #
-    n = FacetNormal(mesh)
-    #
-    #  Write the function F.
-    #
-
-    F = \
-        (
-            dot(u - u_old, v) / DT
-            + inner(u * u.dx(0), v)
-            - dot(f, v)
-        ) * dx
-    #
-    #  Specify the jacobian.
-    #
-    J = derivative(F, u)
-
-    J_mat = assemble(J)
-    J_array = J_mat.array()
-    J_red = np.matmul(selected_podmodes.T, J_array)
-    J_red = np.matmul(J_red, selected_podmodes)
+    u0 = Function(V)
+    u_init = Expression(
+        "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree=1, A=nu / 2)
+    u0.interpolate(u_init)
+    u0 = u0.vector().get_local()
+    u0red = selected_podmodes.T.dot(u0)
 
     def burgers_nonl_func(ufun):
         cform = inner(ufun.dx(0) * ufun, v) * dx
         cass = assemble(cform)
         return cass
-
-    # as a vector to vector map
 
     def burgers_nonl_vec(uvec):
         ufun = Function(V)
@@ -272,21 +241,15 @@ def pod(snapshots, nu, e_num):
     def redbrhs(time, redvec):
         inflatedv = selected_podmodes.dot(redvec)
         redconv = selected_podmodes.T.dot(burgers_nonl_vec(inflatedv))
-        # return -J_red.dot(redvec) - redconv.flatten()
-        return - redconv.flatten()
+        return -Mredinv.dot(redconv)
 
-
-    u = u.vector().get_local()
-    # u = np.matmul(selected_podmodes.T, u)
-    u = selected_podmodes.T.dot(u)
-
-    redburgsol = solve_ivp(redbrhs, (t, t_final), u,
+    redburgsol = solve_ivp(redbrhs, (t, t_final), u0red,
                            t_eval=timegrid, method='RK23')
 
-
-    ks = [25*i for i in range(1,41)]
+    ks = [25 * i for i in range(1, 41)]
     for k in ks:
-        plt.plot(V.tabulate_dof_coordinates(), selected_podmodes.dot(redburgsol.y[:,k-1]))
+        plt.plot(V.tabulate_dof_coordinates(),
+                 selected_podmodes.dot(redburgsol.y[:, k - 1]))
         plt.grid(True)
         filename = ('output/reduced_burgers_time_viscous_%d.png' % (k))
         plt.savefig(filename)
