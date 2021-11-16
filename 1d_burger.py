@@ -7,42 +7,11 @@ import matplotlib.pyplot as plt
 from solvers import CustomSolver
 from problems import CustomProblem
 from scipy.integrate import solve_ivp
+import dolfin
 
+dolfin.parameters['linear_algebra_backend'] = 'Eigen'
 
 def burgers_time_viscous(e_num, nu):
-
-    # *****************************************************************************80
-    #
-    # burgers_time_viscous, 1D time-dependent viscous Burgers equation.
-    #
-    #  Discussion:
-    #
-    #    dudt - nu u" + u del u = 0,
-    #    -1 < x < 1, 0 < t
-    #    u(-1,t) = -1, u(1,t) = 1
-    #    u(x,0) = x
-    #
-    #    This equation is nonlinear in U.
-    #
-    #  Licensing:
-    #
-    #    This code is distributed under the GNU LGPL license.
-    #
-    #  Modified:
-    #
-    #    21 October 2018
-    #
-    #  Author:
-    #
-    #    John Burkardt
-    #
-    #  Parameters:
-    #
-    #    Input, integer E_NUM, the number of elements to use.
-    #
-    #    Input, real NU, the viscosity, which should be positive.
-    #    The larger it is, the smoother the solution will be.
-    #
 
     print('')
     print('  Number of elements is %d' % (e_num))
@@ -204,6 +173,7 @@ def pod(snapshots, nu, e_num):
     plt.grid(True)
     plt.title('$\mu = $' + str(nu))
     plt.savefig(filename)
+    plt.close()
 
     # find pod dimension
     err_tol = 1e-5
@@ -231,21 +201,6 @@ def pod(snapshots, nu, e_num):
     timegrid = np.linspace(t, t_final, t_num)
 
     V = FunctionSpace(mesh, "CG", 1)
-    # snapshots = np.zeros((e_num+1, t_num+1))
-
-    u_left = +1.0
-
-    def on_left(x, on_boundary):
-        return (on_boundary and near(x[0], x_left))
-    bc_left = DirichletBC(V, u_left, on_left)
-
-    u_right = +1.0
-
-    def on_right(x, on_boundary):
-        return (on_boundary and near(x[0], x_right))
-    bc_right = DirichletBC(V, u_right, on_right)
-
-    bc = [bc_left, bc_right]
 
     #  Define the initial condition.
     u_init = Expression(
@@ -317,13 +272,25 @@ def pod(snapshots, nu, e_num):
     def redbrhs(time, redvec):
         inflatedv = selected_podmodes.dot(redvec)
         redconv = selected_podmodes.T.dot(burgers_nonl_vec(inflatedv))
-        return -J_red.dot(redvec) - redconv.flatten()
+        # return -J_red.dot(redvec) - redconv.flatten()
+        return - redconv.flatten()
+
 
     u = u.vector().get_local()
-    u = np.matmul(selected_podmodes.T, u)
+    # u = np.matmul(selected_podmodes.T, u)
+    u = selected_podmodes.T.dot(u)
 
     redburgsol = solve_ivp(redbrhs, (t, t_final), u,
                            t_eval=timegrid, method='RK23')
+
+
+    ks = [25*i for i in range(1,41)]
+    for k in ks:
+        plt.plot(V.tabulate_dof_coordinates(), selected_podmodes.dot(redburgsol.y[:,k-1]))
+        plt.grid(True)
+        filename = ('output/reduced_burgers_time_viscous_%d.png' % (k))
+        plt.savefig(filename)
+        plt.close()
 
     return redburgsol
 
@@ -360,7 +327,7 @@ def burgers_time_viscous_test():
     # print ( '  FENICS/Python version' )
     # print ( '  Solve the time-dependent 1d viscous Burgers equation.' )
 
-    e_num = 10
+    e_num = 1000
     # nu = 0.05
     # nus = [1/10**i for i in range(11)]
     nus = [1.0]
@@ -369,7 +336,7 @@ def burgers_time_viscous_test():
         snapshots = burgers_time_viscous(e_num, nu)
         # svd
         solution = pod(snapshots, nu, e_num)
-        print(len(solution))
+        solution = solution.y
 #
 #  Terminate.
 #

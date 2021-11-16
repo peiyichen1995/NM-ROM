@@ -11,8 +11,8 @@ dolfin.parameters['linear_algebra_backend'] = 'Eigen'
 
 nu = 1.0  # the viscosity
 
-N = 20
-poddim = 25
+N = 5
+poddim = 10
 
 t0, tE, Nts = 0., 1., 101  # the time grid for the snapshots
 timegrid = np.linspace(t0, tE, Nts)
@@ -36,6 +36,8 @@ u = dolfin.TrialFunction(V)
 # ## the mass matrix
 mform = dolfin.inner(v, u)*dolfin.dx
 massm = dolfin.assemble(mform)
+print(type(massm))
+exit()
 mmat = dolfin.as_backend_type(massm).sparray()
 mmat.eliminate_zeros()
 # factorize it for later
