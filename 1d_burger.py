@@ -9,11 +9,13 @@ from problems import CustomProblem
 from scipy.integrate import solve_ivp
 from numpy.linalg import inv
 import dolfin
+import time
+import math
 
 dolfin.parameters['linear_algebra_backend'] = 'Eigen'
 
 
-def burgers_time_viscous(e_num, nu):
+def burgers_time_viscous(e_num, t_num, nu, t_final):
 
     print('')
     print('  Number of elements is %d' % (e_num))
@@ -41,12 +43,8 @@ def burgers_time_viscous(e_num, nu):
 #  Define the function space to be of Lagrange type
 #  using piecewise linear basis functions.
 #
-    t_num = 1000
     k = 0
     t = 0.0
-
-    t_plot = 0.0
-    t_final = 0.5
 
     V = FunctionSpace(mesh, "CG", 1)
     snapshots = np.zeros((e_num + 1, t_num + 1))
@@ -67,20 +65,12 @@ def burgers_time_viscous(e_num, nu):
         return (on_boundary and near(x[0], x_right))
     bc_right = DirichletBC(V, u_right, on_right)
 
-    bc = [bc_left, bc_right]
-    # bc = []
-
-    # Sub domain for Periodic boundary condition
-
-
-#
-#  Define the initial condition.
-#
-    # u_init = Expression ( "x[0]", degree = 1 )
+    # bc = [bc_left, bc_right]
+    bc = []
     u_init = Expression(
         "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree=1, A=nu / 2)
-    # u_init = Expression ( "1+A*(sin(10*pi*x[0]-pi/2)+1)", degree = 1, A = nu/2 )
-
+    # u_init = Expression(
+    #     "A*sin(pi*x[0])", degree=1, A=nu / 2)
 #
 #  Define the trial functions (u) and test functions (v).
 #
@@ -133,26 +123,19 @@ def burgers_time_viscous(e_num, nu):
 #  Do the time integration.
 #
 
-    while (True):
+    while (k <= t_num):
 
         if (k % 25 == 0):
-            # arr = u.vector().get_local()
-            # snapshots[:,k] = arr
-            # plot ( u, title = ( 'burgers time viscous %g' % ( t ) ) )
             plt.plot(V.tabulate_dof_coordinates(), u.vector().get_local())
             plt.grid(True)
             filename = ('output/burgers_time_viscous_%d.png' % (k))
             plt.savefig(filename)
             print('Graphics saved as "%s"' % (filename))
             plt.close()
-            t_plot = t_plot + 0.1
-
-        if (t_final <= t - dt):
-            print('')
-            print('Reached final time.')
-            break
 
         arr = u.vector().get_local()
+        print(snapshots.shape)
+        print(k)
         snapshots[:, k] = arr
 
         k = k + 1
@@ -168,7 +151,7 @@ def burgers_time_viscous(e_num, nu):
     return snapshots
 
 
-def pod(snapshots, nu, e_num):
+def pod(snapshots, nu, e_num, t_num, t_final):
     podmodes, svals, _ = spla.svd(snapshots, full_matrices=False)
     filename = ('output/burgers_viscous_%g.png' % (nu))
     plt.semilogy(svals, '.')
@@ -178,7 +161,7 @@ def pod(snapshots, nu, e_num):
     plt.close()
 
     # find pod dimension
-    err_tol = 1e-3
+    err_tol = 1e-6
     poddim = 1
     err = 1 - np.sum(svals[:poddim]) / np.sum(svals)
     while (err > err_tol):
@@ -193,12 +176,10 @@ def pod(snapshots, nu, e_num):
     x_right = +2.0
     mesh = IntervalMesh(e_num, x_left, x_right)
 
-    t_num = 1000
+    # t_num = 1000
     k = 0
     t = 0.0
 
-    t_plot = 0.0
-    t_final = 0.5
     dt = t_final / t_num
 
     timegrid = np.linspace(t, t_final, t_num)
@@ -222,6 +203,8 @@ def pod(snapshots, nu, e_num):
     u0 = Function(V)
     u_init = Expression(
         "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree=1, A=nu / 2)
+    # u_init = Expression(
+    #     "A*sin(pi*x[0])", degree=1, A=nu / 2)
     u0.interpolate(u_init)
     u0 = u0.vector().get_local()
     u0red = selected_podmodes.T.dot(u0)
@@ -246,68 +229,47 @@ def pod(snapshots, nu, e_num):
     redburgsol = solve_ivp(redbrhs, (t, t_final), u0red,
                            t_eval=timegrid, method='RK23')
 
-    ks = [25 * i for i in range(1, 41)]
+    ks = [25 * i for i in range(1, math.floor(t_num/25)+1)]
     for k in ks:
         plt.plot(V.tabulate_dof_coordinates(),
-                 selected_podmodes.dot(redburgsol.y[:, k - 1]))
+                 selected_podmodes.dot(redburgsol.y)[:, k - 1])
         plt.grid(True)
         filename = ('output/reduced_burgers_time_viscous_%d.png' % (k))
         plt.savefig(filename)
         plt.close()
 
-    return redburgsol
+    return selected_podmodes.dot(redburgsol.y)
 
 
 def burgers_time_viscous_test():
 
-    # *****************************************************************************80
-    #
-    # burgers_time_viscous_test tests burgers_time_viscous.
-    #
-    #  Licensing:
-    #
-    #    This code is distributed under the GNU LGPL license.
-    #
-    #  Modified:
-    #
-    #    21 October 2018
-    #
-    #  Author:
-    #
-    #    John Burkardt
-    #
-    import time
-
-    print(time.ctime(time.time()))
-#
-#  Report level = only warnings or higher.
-#
-    # level = 30
-    # set_log_level ( level )
-
-    # print ( '' )
-    # print ( 'burgers_time_viscous_test:' )
-    # print ( '  FENICS/Python version' )
-    # print ( '  Solve the time-dependent 1d viscous Burgers equation.' )
-
+    # print(time.ctime(time.time()))
     e_num = 1000
+    t_num = 2000
+    t_final = 0.5
     # nu = 0.05
-    # nus = [1/10**i for i in range(11)]
-    nus = [1.0]
+    # nus = [i for i in range(1,11)]
+    nus = [1.0, 2.0]
+    # nus = [1.0]
+    X = []
     for nu in nus:
         print('nu = %g' % (nu))
-        snapshots = burgers_time_viscous(e_num, nu)
-        # svd
-        solution = pod(snapshots, nu, e_num)
-        solution = solution.y
-#
-#  Terminate.
-#
-    # print ( "" )
-    # print ( "burgers_time_viscous_test:" )
-    # print ( "  Normal end of execution." )
-    # print ( '' )
-    # print ( time.ctime ( time.time() ) )
+        snapshots = burgers_time_viscous(e_num, t_num, nu, t_final)
+        solution = pod(snapshots, nu, e_num, t_num, t_final)
+        X.append(snapshots)
+
+    X1 = X[0]
+    X1 = X1[:,1:]
+    X2 = X[1]
+    X2 = X2[:,1:]
+
+    X = np.concatenate((X1, X2),axis=1)
+
+    nu = 1.5
+    # svd
+    solution = pod(X, nu, e_num, t_num, t_final)
+    snapshots = burgers_time_viscous(e_num, t_num, nu, t_final)
+    print(np.linalg.norm(solution - snapshots[:,1:])/np.linalg.norm(X))
 
     return
 
