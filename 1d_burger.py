@@ -1,5 +1,3 @@
-#! /usr/bin/env python
-#
 from fenics import *
 import numpy as np
 import scipy.linalg as spla
