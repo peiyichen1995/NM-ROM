@@ -63,8 +63,9 @@ J = derivative(F, u)
 ############################
 # Solve
 ############################
-out = XDMFFile("output/burgers_1D.xdmf")
-out.write_checkpoint(u, "u", t_start, XDMFFile.Encoding.HDF5, False)
+outfile = XDMFFile("output/burgers_1D.xdmf")
+outfile.write(mesh)
+outfile.write_checkpoint(u, "u", t_start, XDMFFile.Encoding.HDF5, True)
 for t in t_sequence:
     print("----------------------------")
     print("Time = {0:.4E}".format(t))
@@ -72,5 +73,5 @@ for t in t_sequence:
     solver = NonlinearVariationalSolver(problem)
     solver.solve()
     u_old.assign(u)
-    out.write_checkpoint(u, "u", t, XDMFFile.Encoding.HDF5, True)
-out.close()
+    outfile.write_checkpoint(u, "u", t, XDMFFile.Encoding.HDF5, True)
+outfile.close()
