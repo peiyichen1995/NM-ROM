@@ -10,7 +10,7 @@ print("Reading mesh and solution of the full order model")
 mesh, u = read_mesh_and_function(filename, "u")
 
 print("Performing proper-orthogonal decomposition")
-TOL = 1e-2
+TOL = 1e-6
 Phi, svals = POD(u, TOL)
 print("{0:d} most important modes selected with a tolerance of {1:.3E}".format(
     len(svals), TOL))

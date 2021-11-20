@@ -31,13 +31,13 @@ def read_mesh_and_function(file_name, var_name):
 
 
 def POD(snapshots, TOL=0):
-    phi, svals, _ = spla.svd(snapshots, full_matrices=False)
+    Phi, svals, _ = spla.svd(snapshots, full_matrices=False)
 
     # Find pod dimension that gives an error below the tolerance
     dim = 1
-    err = 1 - np.sum(svals[:dim]) / np.sum(svals)
+    err = 1 - np.sum(np.power(svals[:dim], 2)) / np.sum(np.power(svals, 2))
     while (err > TOL and dim < len(svals)):
         dim += 1
-        err = 1 - np.sum(svals[:dim]) / np.sum(svals)
+        err = 1 - np.sum(np.power(svals[:dim], 2)) / np.sum(np.power(svals, 2))
 
-    return phi[:, :dim], svals[:dim]
+    return Phi[:, :dim], svals[:dim]
