@@ -1,7 +1,7 @@
 import h5py
 from fenics import *
 import numpy as np
-import scipy.linalg as spla
+import scipy as sp
 
 
 def read_mesh_and_function(file_name, var_name):
@@ -31,7 +31,7 @@ def read_mesh_and_function(file_name, var_name):
 
 
 def POD(snapshots, TOL=0):
-    Phi, svals, _ = spla.svd(snapshots, full_matrices=False)
+    Phi, svals, _ = sp.linalg.svd(snapshots, full_matrices=False)
 
     # Find pod dimension that gives an error below the tolerance
     dim = 1
@@ -49,15 +49,25 @@ def assemble_reduced_form(form, Phi):
     return red
 
 
-def solve_svd(A, B):
-    # Solve     A X = B
-    #    => U S V X = B
-    #    =>   S V X = U.T B
-    #    =>     V X = 1/S U.T B
-    #    =>       X = 1/S V.T U.T B
-    U, S, V = spla.svd(A, full_matrices=False)
-    print(S[0] / S[-1])
-    SVX = np.matmul(U.T, B)
-    VX = np.matmul(np.diag(1 / S), SVX)
-    X = np.matmul(V.conj().T, VX)
+def solve_svd(A, B, TOL=1e-6):
+    # Solve       A X = B
+    #    => U S V.T X = B
+    #    =>   S V.T X = U.T B
+    #    =>     V.T X = 1/S U.T B
+    #    =>         X = 1/S V U.T B
+    U, S, Vt = sp.linalg.svd(A, full_matrices=False)
+
+    # Eliminate zero singular values
+    dim = 1
+    err = 1 - np.sum(np.power(S[:dim], 2)) / np.sum(np.power(S, 2))
+    while (err > TOL and dim <= len(S)):
+        dim += 1
+        err = 1 - np.sum(np.power(S[:dim], 2)) / np.sum(np.power(S, 2))
+    U = U[:, :dim]
+    S = S[:dim]
+    Vt = Vt[:dim, :]
+
+    SVtX = np.matmul(U.T, B)
+    VtX = np.matmul(np.diag(1 / S), SVtX)
+    X = np.matmul(Vt.conj().T, VtX)
     return X

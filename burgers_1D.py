@@ -6,14 +6,14 @@ import numpy as np
 ############################
 nu = 0.001
 A = 0.5
-filename = "output/burgers_1D/nu_" + str(nu)
+filename = "output/burgers_1D/nu_" + str(nu) + "/FOM"
 
 ############################
 # Mesh
 ############################
 x_left = 0.0
 x_right = 2.0
-elements = 2000
+elements = 1000
 mesh = IntervalMesh(elements, x_left, x_right)
 
 ############################
@@ -21,7 +21,7 @@ mesh = IntervalMesh(elements, x_left, x_right)
 ############################
 t_start = 0.0
 t_final = 0.5
-t_steps = 1000
+t_steps = 500
 t_sequence = np.linspace(t_start, t_final, t_steps)
 dt = (t_final - t_start) / t_steps
 
@@ -41,13 +41,14 @@ v = TestFunction(V)
 ############################
 # Boundary conditions
 ############################
-u_left = 1.0
-bc_left = DirichletBC(V, u_left, lambda x,
-                      on_boundary: on_boundary and near(x[0], x_left))
-u_right = 1.0
-bc_right = DirichletBC(V, u_right, lambda x,
-                       on_boundary: on_boundary and near(x[0], x_right))
-bcs = [bc_left, bc_right]
+# u_left = 1.0
+# bc_left = DirichletBC(V, u_left, lambda x,
+#                       on_boundary: on_boundary and near(x[0], x_left))
+# u_right = 1.0
+# bc_right = DirichletBC(V, u_right, lambda x,
+#                        on_boundary: on_boundary and near(x[0], x_right))
+# bcs = [bc_left, bc_right]
+bcs = []
 
 ############################
 # Initial condition
