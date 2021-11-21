@@ -7,7 +7,7 @@ from numpy.linalg import inv
 ############################
 # Model parameters
 ############################
-method = "LS_ROM_DMD_fully_offline"
+method = "LS_ROM_OpInf_fully_offline"
 nu = 0.1
 A = 0.5
 filename = "output/burgers_1D/nu_" + str(nu)
@@ -27,7 +27,7 @@ K = u_ref.shape[1]
 # r: number of dofs in the reduced order model
 ############################
 print("Performing proper-orthogonal decomposition")
-TOL = 1e-12
+TOL = 1e-3
 Phi, svals = POD(u_ref, TOL)
 R, r = Phi.shape
 print("{0:d} most important modes selected with a tolerance of {1:.3E}".format(
@@ -57,15 +57,27 @@ u0_red = Phi.T.dot(u0.vector().get_local())
 ############################
 # Dynamic mode decomposition
 # Approximate the linear operator A:
-# du/dt = A u
+# du/dt = A u + H uxu
 ############################
 u_ref_red = np.matmul(Phi.T, u_ref)
 u_ref_dot_red = np.matmul(Phi.T, u_ref_dot)
+
 A_red = solve_svd(u_ref_red.T, u_ref_dot_red.T)
 A_red = A_red.T
+D = np.zeros((K, r + r * r))
+for i in range(K):
+    D[i, 0:r] = u_ref_red[:, i]
+    D[i, r:] = np.outer(u_ref_red[:, i], u_ref_red[:, i]).flatten()
+AH_red = solve_svd(D, u_ref_dot_red.T)
+A_red = AH_red[0:r, :].T
+H_red = AH_red[r:, :].T
+
+print(u_ref_red.T)
+print(D)
 
 
 def rhs_red(t, u_red):
+    # return A_red.dot(u_red) + H_red.dot(np.outer(u_red, u_red).flatten())
     return A_red.dot(u_red)
 
 

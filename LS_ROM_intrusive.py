@@ -20,10 +20,13 @@ mesh, u_ref = read_mesh_and_function(filename, "u")
 
 ############################
 # Perform POD
+# R: number of dofs in the full order model
+# r: number of dofs in the reduced order model
 ############################
 print("Performing proper-orthogonal decomposition")
 TOL = 1e-12
 Phi, svals = POD(u_ref, TOL)
+R, r = Phi.shape
 print("{0:d} most important modes selected with a tolerance of {1:.3E}".format(
     len(svals), TOL))
 

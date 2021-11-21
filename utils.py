@@ -56,6 +56,7 @@ def solve_svd(A, B):
     #    =>     V X = 1/S U.T B
     #    =>       X = 1/S V.T U.T B
     U, S, V = spla.svd(A, full_matrices=False)
+    print(S[0] / S[-1])
     SVX = np.matmul(U.T, B)
     VX = np.matmul(np.diag(1 / S), SVX)
     X = np.matmul(V.conj().T, VX)
