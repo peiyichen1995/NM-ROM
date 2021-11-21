@@ -47,3 +47,16 @@ def assemble_reduced_form(form, Phi):
     mat = assemble(form).array()
     red = np.matmul(np.matmul(Phi.T, mat), Phi)
     return red
+
+
+def solve_svd(A, B):
+    # Solve     A X = B
+    #    => U S V X = B
+    #    =>   S V X = U.T B
+    #    =>     V X = 1/S U.T B
+    #    =>       X = 1/S V.T U.T B
+    U, S, V = spla.svd(A, full_matrices=False)
+    SVX = np.matmul(U.T, B)
+    VX = np.matmul(np.diag(1 / S), SVX)
+    X = np.matmul(V.conj().T, VX)
+    return X

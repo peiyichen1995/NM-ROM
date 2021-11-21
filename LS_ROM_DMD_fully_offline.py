@@ -3,12 +3,12 @@ import matplotlib.pyplot as plt
 from utils import *
 from scipy.integrate import solve_ivp
 from numpy.linalg import inv
-import math
 
 ############################
 # Model parameters
 ############################
-nu = 0.1
+method = "LS_ROM_DMD_fully_offline"
+nu = 0.001
 A = 0.5
 filename = "output/burgers_1D/nu_" + str(nu)
 
@@ -17,9 +17,10 @@ filename = "output/burgers_1D/nu_" + str(nu)
 ############################
 print("Reading mesh and solution of the full order model")
 mesh, u_ref = read_mesh_and_function(filename, "u")
+mesh, u_ref_dot = read_mesh_and_function(filename, "u_dot")
 
 ############################
-# Perform POD bases
+# Perform POD
 ############################
 print("Performing proper-orthogonal decomposition")
 TOL = 1e-12
@@ -49,23 +50,18 @@ u0.interpolate(u0_expr)
 u0_red = Phi.T.dot(u0.vector().get_local())
 
 ############################
-# Weak form and Jacobian
-# F = (dot(u - u_old, v) / Constant(dt) +
-#     inner(nu * grad(u), grad(v)) + inner(u * u.dx(0), v)) * dx
+# Dynamic mode decomposition
+# Approximate the linear operator A:
+# du/dt = A u
 ############################
-M_form = derivative(dot(u, v) * dx, u)
-M_red = assemble_reduced_form(M_form, Phi)
-M_red_inv = inv(M_red)
-
-K_form = derivative(inner(nu * grad(u), grad(v)) * dx, u)
-K_red = assemble_reduced_form(K_form, Phi)
+u_ref_red = np.matmul(Phi.T, u_ref)
+u_ref_dot_red = np.matmul(Phi.T, u_ref_dot)
+A_red = solve_svd(u_ref_red.T, u_ref_dot_red.T)
+A_red = A_red.T
 
 
-def rhs_red(t, u_reduced):
-    u.vector().set_local(Phi.dot(u_reduced))
-    nl_form = inner(u.dx(0) * u, v) * dx
-    nl_red = Phi.T.dot(assemble(nl_form).get_local())
-    return -M_red_inv.dot(K_red.dot(u_reduced) + nl_red)
+def rhs_red(t, u_red):
+    return A_red.dot(u_red)
 
 
 ############################
@@ -84,7 +80,7 @@ print("Solving the reduced order model")
 u_red = solve_ivp(rhs_red, (t_start, t_final), u0_red,
                   t_eval=t_sequence, method='RK23')
 
-outfile = XDMFFile(filename + "_LS_ROM.xdmf")
+outfile = XDMFFile(filename + "_" + method + ".xdmf")
 i = 0
 u_proj = np.zeros(u_ref.shape)
 u_proj[:, 0] = Phi.dot(u0_red)
@@ -95,7 +91,6 @@ for t in t_sequence:
     outfile.write(u, t)
     i += 1
 outfile.close()
-
 
 ############################
 # Plot results
@@ -120,7 +115,7 @@ plt.close()
 
 # Projected ROM solution
 fig, ax = plt.subplots()
-im = ax.imshow(u_proj)
+im = ax.imshow(u_proj, vmin=1, vmax=2)
 cb = fig.colorbar(im)
 cb.set_ticks(cb_ref.get_ticks())
 ax.set_xlabel("$t$")
@@ -132,7 +127,7 @@ ax.set_yticks(ytick_loc)
 ax.set_yticklabels(V.tabulate_dof_coordinates()[ytick_loc, 0])
 ax.set_aspect("auto")
 plt.tight_layout(pad=0)
-plt.savefig(filename + "_LS_ROM_proj.png")
+plt.savefig(filename + "_" + method + "_proj.png")
 plt.close()
 
 # Error
@@ -148,5 +143,5 @@ ax.set_yticks(ytick_loc)
 ax.set_yticklabels(V.tabulate_dof_coordinates()[ytick_loc, 0])
 ax.set_aspect("auto")
 plt.tight_layout(pad=0)
-plt.savefig(filename + "_LS_ROM_error.png")
+plt.savefig(filename + "_" + method + "_error.png")
 plt.close()

@@ -4,7 +4,7 @@ import numpy as np
 ############################
 # Model parameters
 ############################
-nu = 0.1
+nu = 0.001
 A = 0.5
 filename = "output/burgers_1D/nu_" + str(nu)
 
@@ -35,6 +35,7 @@ V = FunctionSpace(mesh, "CG", 1)
 ############################
 u = Function(V)
 u_old = Function(V)
+u_dot = Function(V)
 v = TestFunction(V)
 
 ############################
@@ -55,6 +56,7 @@ u0_expr = Expression(
     "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree=1, A=A)
 u.interpolate(u0_expr)
 u_old.assign(u)
+u_dot.interpolate(Constant(0))
 
 ############################
 # Weak form and Jacobian
@@ -69,12 +71,15 @@ J = derivative(F, u)
 outfile = XDMFFile(filename + ".xdmf")
 outfile.write(mesh)
 outfile.write_checkpoint(u, "u", t_start, XDMFFile.Encoding.HDF5, True)
+outfile.write_checkpoint(u_dot, "u_dot", t_start, XDMFFile.Encoding.HDF5, True)
 for t in t_sequence:
     print("----------------------------")
     print("Time = {0:.4E}".format(t))
     problem = NonlinearVariationalProblem(F, u, bcs, J)
     solver = NonlinearVariationalSolver(problem)
     solver.solve()
+    u_dot = project((u - u_old) / Constant(dt), V)
     u_old.assign(u)
     outfile.write_checkpoint(u, "u", t, XDMFFile.Encoding.HDF5, True)
+    outfile.write_checkpoint(u_dot, "u_dot", t, XDMFFile.Encoding.HDF5, True)
 outfile.close()
