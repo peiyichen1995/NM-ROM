@@ -41,3 +41,9 @@ def POD(snapshots, TOL=0):
         err = 1 - np.sum(np.power(svals[:dim], 2)) / np.sum(np.power(svals, 2))
 
     return Phi[:, :dim], svals[:dim]
+
+
+def assemble_reduced_form(form, Phi):
+    mat = assemble(form).array()
+    red = np.matmul(np.matmul(Phi.T, mat), Phi)
+    return red
