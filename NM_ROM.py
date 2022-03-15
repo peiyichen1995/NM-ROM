@@ -36,7 +36,52 @@ print("{0:d} most important modes selected with a tolerance of {1:.3E}".format(
 # R: number of dofs in the full order model
 # encoding_dim: number of dofs in the reduced order model
 ############################
-encoding_dim = 32
+
+# This is the number of dofs in the reduced order model
+encoding_dim = 82
+
+nodes, time_steps = u_ref.shape
+
+# split test and train data
+X_train, X_test, y_train, y_test = train_test_split(u_ref.T, u_ref.T, test_size=0.2, random_state=42)
+
+# This is our input image
+input_img = keras.Input(shape=(u_ref.shape[0],))
+
+# "encoded" is the encoded representation of the input
+# encoded = layers.Dense(encoding_dim, activation='sigmoid')(input_img)
+encoded = layers.Dense(1500, activation='linear')(input_img)
+encoded = layers.Dense(encoding_dim, activation='linear')(encoded)
+
+
+# "decoded" is the lossy reconstruction of the input
+decoded = layers.Dense(u_ref.shape[0], activation='linear')(encoded)
+
+# This model maps an input to its reconstruction
+autoencoder = keras.Model(input_img, decoded)
+
+# This model maps an input to its encoded representation
+encoder = keras.Model(input_img, encoded)
+
+# This is our encoded (32-dimensional) input
+encoded_input = keras.Input(shape=(encoding_dim,))
+# Retrieve the last layer of the autoencoder model
+decoder_layer = autoencoder.layers[-1]
+# Create the decoder model
+decoder = keras.Model(encoded_input, decoder_layer(encoded_input))
+
+num_epochs = 10000
+lr = 0.1
+decay_rate = lr / num_epochs
+momentum = 0.8
+autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+
+autoencoder.fit(X_train, X_train,
+                epochs=num_epochs,
+                validation_data=(X_test, X_test))
+
+
+print('\nFinshed training.\n')
 
 exit()
 ############################
