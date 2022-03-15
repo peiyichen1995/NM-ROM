@@ -2,7 +2,8 @@ import h5py
 from fenics import *
 import numpy as np
 import scipy as sp
-
+import keras
+from keras import layers
 
 def read_mesh_and_function(file_name, var_name):
 
