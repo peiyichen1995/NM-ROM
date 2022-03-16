@@ -18,44 +18,32 @@ filename = "output/burgers_1D/nu_" + str(nu) + "/"
 print("Reading mesh and solution of the full order model")
 mesh, u_ref = read_mesh_and_function(filename + "FOM", "u")
 
-
-############################
-# Perform POD
-# R: number of dofs in the full order model
-# r: number of dofs in the reduced order model
-############################
-print("Performing proper-orthogonal decomposition")
-TOL = 1e-12
-Phi, svals = POD(u_ref, TOL)
-R, r = Phi.shape
-print("{0:d} most important modes selected with a tolerance of {1:.3E}".format(
-    len(svals), TOL))
-
 ############################
 # Perform AutoEncoding
 # R: number of dofs in the full order model
-# encoding_dim: number of dofs in the reduced order model
+# r: number of dofs in the reduced order model
 ############################
 
 # This is the number of dofs in the reduced order model
-encoding_dim = 82
+r = 82
 
-nodes, time_steps = u_ref.shape
+R, time_steps = u_ref.shape
 
 # split test and train data
-X_train, X_test, y_train, y_test = train_test_split(u_ref.T, u_ref.T, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    u_ref.T, u_ref.T, test_size=0.2, random_state=42)
 
 # This is our input image
-input_img = keras.Input(shape=(u_ref.shape[0],))
+input_img = keras.Input(shape=(R, ))
 
 # "encoded" is the encoded representation of the input
-# encoded = layers.Dense(encoding_dim, activation='sigmoid')(input_img)
+# encoded = layers.Dense(r, activation='sigmoid')(input_img)
 encoded = layers.Dense(1500, activation='linear')(input_img)
-encoded = layers.Dense(encoding_dim, activation='linear')(encoded)
+encoded = layers.Dense(r, activation='linear')(encoded)
 
 
 # "decoded" is the lossy reconstruction of the input
-decoded = layers.Dense(u_ref.shape[0], activation='linear')(encoded)
+decoded = layers.Dense(R, activation='linear')(encoded)
 
 # This model maps an input to its reconstruction
 autoencoder = keras.Model(input_img, decoded)
@@ -64,16 +52,14 @@ autoencoder = keras.Model(input_img, decoded)
 encoder = keras.Model(input_img, encoded)
 
 # This is our encoded (32-dimensional) input
-encoded_input = keras.Input(shape=(encoding_dim,))
+encoded_input = keras.Input(shape=(r,))
 # Retrieve the last layer of the autoencoder model
 decoder_layer = autoencoder.layers[-1]
 # Create the decoder model
 decoder = keras.Model(encoded_input, decoder_layer(encoded_input))
 
-num_epochs = 10000
-lr = 0.1
-decay_rate = lr / num_epochs
-momentum = 0.8
+num_epochs = 1
+
 autoencoder.compile(optimizer='adam', loss='mean_squared_error')
 
 autoencoder.fit(X_train, X_train,
@@ -81,9 +67,6 @@ autoencoder.fit(X_train, X_train,
                 validation_data=(X_test, X_test))
 
 
-print('\nFinshed training.\n')
-
-exit()
 ############################
 # Function space
 ############################
@@ -103,32 +86,33 @@ v = TestFunction(V)
 u0_expr = Expression(
     "x[0] < 1 ? 1+A*(sin(2*pi*x[0]-pi/2)+1) : 1", degree=1, A=A)
 u0.interpolate(u0_expr)
-u0_red = Phi.T.dot(u0.vector().get_local())
-print(u0.vector().get_local().shape)
-print(u0_red.shape)
-exit()
+
+print(input_img.shape)
+
+u0_red = encoder.predict(u0.vector().get_local().reshape(1, -1))
+u0_red = u0_red.reshape(r,)
 
 
-# ############################
-# # Weak form and Jacobian
-# # F = (dot(u - u_old, v) / Constant(dt) +
-# #     inner(nu * grad(u), grad(v)) + inner(u * u.dx(0), v)) * dx
-# ############################
-# M_form = derivative(dot(u, v) * dx, u)
-# M_red = assemble_reduced_form(M_form, Phi)
-# M_red_inv = inv(M_red)
-#
-# K_form = derivative(inner(nu * grad(u), grad(v)) * dx, u)
-# K_red = assemble_reduced_form(K_form, Phi)
-#
-#
-# def rhs_red(t, u_red):
-#     u.vector().set_local(Phi.dot(u_red))
-#     nl_form = inner(u.dx(0) * u, v) * dx
-#     nl_red = Phi.T.dot(assemble(nl_form).get_local())
-#     return -M_red_inv.dot(K_red.dot(u_red) + nl_red)
-#
-#
+############################
+# Weak form and Jacobian
+# F = (dot(u - u_old, v) / Constant(dt) +
+#     inner(nu * grad(u), grad(v)) + inner(u * u.dx(0), v)) * dx
+############################
+M_form = derivative(dot(u, v) * dx, u)
+M_red = assemble_reduced_form(M_form, Phi)
+M_red_inv = inv(M_red)
+
+K_form = derivative(inner(nu * grad(u), grad(v)) * dx, u)
+K_red = assemble_reduced_form(K_form, Phi)
+
+
+def rhs_red(t, u_red):
+    u.vector().set_local(Phi.dot(u_red))
+    nl_form = inner(u.dx(0) * u, v) * dx
+    nl_red = Phi.T.dot(assemble(nl_form).get_local())
+    return -M_red_inv.dot(K_red.dot(u_red) + nl_red)
+
+
 # ############################
 # # Time control
 # ############################
