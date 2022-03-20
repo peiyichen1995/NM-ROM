@@ -63,7 +63,7 @@ n_train = len(u_train)
 n = 15
 M1 = 100
 M2 = 100
-n_epoch = 20000
+n_epoch = 40000
 
 
 class Encoder(nn.Module):
@@ -103,7 +103,7 @@ class Decoder(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        n_sigmas = 10
+        n_sigmas = 5
         sigmas = nn.Dense(n_sigmas, dtype=jnp.float64,
                           param_dtype=jnp.float64)(x)
         x = nn.Dense(self.latents[0], dtype=jnp.float64,
@@ -155,7 +155,7 @@ params = model().init(random.PRNGKey(0), u_train[0])
 tx = optax.adam(0.001)
 opt_state = tx.init(params)
 loss_grad_fn = jax.value_and_grad(loss_fn)
-min_loss = 100
+min_loss = loss_fn(params, u_train)
 best_params = FrozenDict()
 best_params = best_params.copy(params)
 
@@ -167,7 +167,7 @@ for i in range(n_epoch):
     updates, opt_state = tx.update(grads, opt_state)
     params = optax.apply_updates(params, updates)
     if i % 10 == 0:
-        print('Loss step {}: '.format(i), loss_val)
+        print('step: {}, loss = {:.6E}, min_loss = {:.6E}'.format(i, loss_val, min_loss))
     if loss_val < 1e-6:
         break
 
