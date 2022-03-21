@@ -103,9 +103,10 @@ class Decoder(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        n_sigmas = 5
+        n_sigmas = 100
         sigmas = nn.Dense(n_sigmas, dtype=jnp.float64,
                           param_dtype=jnp.float64)(x)
+        # sigmas = nn.relu(sigmas)
         x = nn.Dense(self.latents[0], dtype=jnp.float64,
                      param_dtype=jnp.float64)(x)
         x = nn.swish(x)
