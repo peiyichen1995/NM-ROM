@@ -62,7 +62,7 @@ u_train = u_ref[np.arange(0, time_steps, 5)]
 n_train = len(u_train)
 n = 15
 M1 = 100
-M2 = 100
+M2 = 15
 n_epoch = 40000
 
 
@@ -101,11 +101,14 @@ def dynamic_gaussian_smooth(x, window_size, sigmas):
 class Decoder(nn.Module):
     latents: Sequence[int]
 
+    def setup(self):
+        n_sigmas = 5
+        self.sigma = nn.Dense(n_sigmas, dtype=jnp.float64,
+                          param_dtype=jnp.float64)
+
     @nn.compact
     def __call__(self, x):
-        n_sigmas = 5
-        sigmas = nn.Dense(n_sigmas, dtype=jnp.float64,
-                          param_dtype=jnp.float64)(x)
+        sigmas = self.sigma(x)
         x = nn.Dense(self.latents[0], dtype=jnp.float64,
                      param_dtype=jnp.float64)(x)
         x = nn.swish(x)
@@ -130,6 +133,9 @@ class VAE(nn.Module):
 
     def decode(self, x):
         return self.decoder(x)
+
+    def sigmas(self, x):
+        return self.decoder.sigma(x)
 
     def __call__(self, x):
         return self.decode(self.encode(x))
