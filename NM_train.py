@@ -81,20 +81,14 @@ class Encoder(nn.Module):
 def gaussian_kernel(window_size, sigma):
     mu = window_size / 2
     x = jnp.arange(window_size)
-    window = jnp.exp((-((x - mu)**2)) / (2 * sigma**2))
+    window = jnp.exp((-((x-mu)**2))/(2*sigma**2))
     window = window / jnp.sum(window)
     return window
 
-
-@partial(jax.jit, static_argnums=1)
-def dynamic_gaussian_smooth(x, window_size, sigmas):
-    windows = jax.vmap(gaussian_kernel, in_axes=(None, 0))(window_size, sigmas)
-    split_index = np.linspace(0, len(x), len(
-        sigmas), endpoint=False, dtype=int)[1:]
-    x_split = jnp.split(x, split_index)
-    xs = []
-    for i, window in enumerate(windows):
-        xs.append(jnp.convolve(x_split[i], window, mode='same'))
+@jax.jit
+def dynamic_gaussian_smooth(xs, windows):
+    for i,x in enumerate(xs):
+        xs[i] = jnp.convolve(x, windows[i], mode='same')
     return jnp.hstack(xs)
 
 
@@ -105,17 +99,18 @@ class Decoder(nn.Module):
         n_sigmas = 5
         self.sigma = nn.Dense(n_sigmas, dtype=jnp.float64,
                           param_dtype=jnp.float64)
+        self.split_index = np.linspace(0, N, n_sigmas, endpoint=False, dtype=int)[1:]
 
     @nn.compact
     def __call__(self, x):
-        sigmas = self.sigma(x)
         x = nn.Dense(self.latents[0], dtype=jnp.float64,
                      param_dtype=jnp.float64)(x)
         x = nn.swish(x)
         x = nn.Dense(N, dtype=jnp.float64, param_dtype=jnp.float64)(x)
 
-        window_size = int(len(x) / 10)
-        x = dynamic_gaussian_smooth(x, window_size, sigmas)
+        sigmas = self.sigma(x)
+        windows = jax.vmap(gaussian_kernel, in_axes=(None,0))(int(N / 20), sigmas)
+        x = dynamic_gaussian_smooth(jnp.split(x, self.split_index), windows)
 
         return x
 
