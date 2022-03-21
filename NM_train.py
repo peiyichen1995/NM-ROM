@@ -103,16 +103,15 @@ class Decoder(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        n_sigmas = 100
+        n_sigmas = 5
         sigmas = nn.Dense(n_sigmas, dtype=jnp.float64,
                           param_dtype=jnp.float64)(x)
-        # sigmas = nn.relu(sigmas)
         x = nn.Dense(self.latents[0], dtype=jnp.float64,
                      param_dtype=jnp.float64)(x)
         x = nn.swish(x)
         x = nn.Dense(N, dtype=jnp.float64, param_dtype=jnp.float64)(x)
 
-        window_size = int(len(x) / len(sigmas))
+        window_size = int(len(x) / 10)
         x = dynamic_gaussian_smooth(x, window_size, sigmas)
 
         return x
