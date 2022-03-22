@@ -55,9 +55,8 @@ u_ref = u_ref.T
 time_steps, N = u_ref.shape
 u_train = u_ref[np.arange(0, time_steps, 5)]
 n_train = len(u_train)
-M1 = 100
-M2 = 100
-n_epoch = 40000
+M1 = 2000
+M2 = N
 
 
 def model():
@@ -76,25 +75,49 @@ def rel_err(x, xt):
     return jnp.linalg.norm(x - xt)
 
 
+n_epoch = 40000
+n_batches = 5
+learning_rate = 0.001
+learning_rate_cut_factor = 10
+max_patience = 200
+training_tol = 1e-4
+
 params = model().init(random.PRNGKey(0), u_train[0])
-tx = optax.adam(0.001)
+tx = optax.adam(learning_rate)
 opt_state = tx.init(params)
 loss_grad_fn = jax.value_and_grad(loss_fn)
 min_loss = loss_fn(params, u_train)
 best_params = FrozenDict()
 best_params = best_params.copy(params)
-
+batch_indices = np.linspace(0, u_train.shape[0], n_batches, endpoint=False)[1:]
 CKPT_DIR = "nu_" + str(nu) + "_n_" + str(n) + "_n_sigmas_" + str(n_sigmas)
 
 loss_history = []
+patience = 0
 for i in range(n_epoch):
-    loss_val, grads = loss_grad_fn(params, u_train)
-    loss_history.append(loss_val)
+    if patience > max_patience:
+        learning_rate = learning_rate / learning_rate_cut_factor
+        print('Min loss has not dropped in {:} epochs. Reduce learning rate to {:}'.format(
+            max_patience, learning_rate))
+        tx = optax.adam(learning_rate)
+        opt_state = tx.init(params)
+        patience = 0
+    np.random.shuffle(u_train)
+    batches = jnp.split(u_train, batch_indices)
+    losses = []
+    for j, batch in enumerate(batches):
+        loss_val, grads = loss_grad_fn(params, batch)
+        losses.append(loss_val)
+        updates, opt_state = tx.update(grads, opt_state)
+        params = optax.apply_updates(params, updates)
+    loss_val = np.mean(losses)
     if loss_val < min_loss:
         min_loss = loss_val
         best_params = best_params.copy(params)
-    updates, opt_state = tx.update(grads, opt_state)
-    params = optax.apply_updates(params, updates)
+        patience = 0
+    else:
+        patience = patience + 1
+    loss_history.append(loss_val)
     if i % 10 == 0:
         print('step: {}, loss = {:.6E}, min_loss = {:.6E}'.format(
             i, loss_val, min_loss))
@@ -104,7 +127,7 @@ for i in range(n_epoch):
                                               tx=tx)
         checkpoints.save_checkpoint(
             ckpt_dir=CKPT_DIR, target=state, step=i, overwrite=True)
-    if loss_val < 1e-6:
+    if loss_val < training_tol:
         break
 
 state = train_state.TrainState.create(apply_fn=model().apply,

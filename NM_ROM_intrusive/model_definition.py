@@ -56,19 +56,19 @@ class Decoder(nn.Module):
     n_sigmas: int
 
     def setup(self):
-        self.sigma = nn.Dense(self.n_sigmas, dtype=jnp.float64,
-                              param_dtype=jnp.float64)
         self.split_index = np.linspace(
             0, self.N, self.n_sigmas, endpoint=False, dtype=int)[1:]
 
     @nn.compact
     def __call__(self, x):
-        x = nn.Dense(self.latents[0], dtype=jnp.float64,
-                     param_dtype=jnp.float64)(x)
-        x = nn.swish(x)
+        sigmas = nn.Dense(self.latents[0], dtype=jnp.float64,
+                          param_dtype=jnp.float64)(x)
+        sigmas = nn.swish(sigmas)
+        sigmas = nn.Dense(self.n_sigmas, dtype=jnp.float64,
+                          param_dtype=jnp.float64)(sigmas)
+
         x = nn.Dense(self.N, dtype=jnp.float64, param_dtype=jnp.float64)(x)
 
-        sigmas = self.sigma(x)
         windows = jax.vmap(gaussian_kernel, in_axes=(None, 0))(
             int(self.N / self.n_sigmas), sigmas)
         x = dynamic_gaussian_smooth(jnp.split(x, self.split_index), windows)
