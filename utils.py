@@ -65,5 +65,3 @@ def solve_svd(A, B, TOL=1e-6):
     VtX = np.matmul(np.diag(1 / S), SVtX)
     X = np.matmul(Vt.conj().T, VtX)
     return X
-
-# def encoder_decoder(snapshots, TOL=0):

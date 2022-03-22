@@ -1,16 +1,60 @@
 import matplotlib
 import matplotlib.pyplot as plt
-from utils import *
 from scipy.integrate import solve_ivp
-from numpy.linalg import inv
+import argparse
+import h5py
+from fenics import *
+import numpy as np
+import scipy as sp
+import os
+
+def read_mesh_and_function(file_name, var_name):
+
+    # Open solution file
+    infile = XDMFFile(file_name + ".xdmf")
+    infile_h5 = h5py.File(file_name + ".h5", "r")
+    t_steps = len(infile_h5[var_name].keys())
+
+    # Read in mesh
+    mesh = Mesh()
+    infile.read(mesh)
+
+    # Read function
+    V = FunctionSpace(mesh, "CG", 1)
+    u = Function(V)
+    solution = np.zeros((V.dim(), t_steps))
+    for i in range(t_steps):
+        infile.read_checkpoint(u, var_name, i - t_steps + 1)
+        solution[:, i] = u.vector().get_local()
+
+    # Clean up
+    infile.close()
+    infile_h5.close()
+
+    return mesh, solution
+
+def POD(snapshots, num_bases):
+    Phi, svals, _ = sp.linalg.svd(snapshots, full_matrices=False)
+    return Phi[:, :num_bases], svals[:num_bases]
+
+
+def assemble_reduced_form(form, Phi):
+    mat = assemble(form).array()
+    red = np.matmul(np.matmul(Phi.T, mat), Phi)
+    return red
 
 ############################
 # Model parameters
 ############################
 method = "LS_ROM_intrusive"
-nu = 0.001
+parser = argparse.ArgumentParser()
+parser.add_argument('nu', type=float)
+parser.add_argument('n', type=int)
+args = parser.parse_args()
+nu = args.nu
+r = args.n
 A = 0.5
-filename = "output/burgers_1D/nu_" + str(nu) + "/"
+filename = "../output/burgers_1D/nu_" + str(nu) + "/"
 
 ############################
 # Read snapshots
@@ -24,7 +68,6 @@ mesh, u_ref = read_mesh_and_function(filename + "FOM", "u")
 # r: number of dofs in the reduced order model
 ############################
 print("Performing proper-orthogonal decomposition")
-r = 80
 Phi, svals = POD(u_ref, r)
 R, _ = Phi.shape
 err = 1 - np.sum(np.power(svals, 2)) / \
@@ -60,7 +103,7 @@ u0_red = Phi.T.dot(u0.vector().get_local())
 ############################
 M_form = derivative(dot(u, v) * dx, u)
 M_red = assemble_reduced_form(M_form, Phi)
-M_red_inv = inv(M_red)
+M_red_inv = np.linalg.inv(M_red)
 
 K_form = derivative(inner(nu * grad(u), grad(v)) * dx, u)
 K_red = assemble_reduced_form(K_form, Phi)
@@ -102,6 +145,9 @@ outfile.close()
 ############################
 # Plot results
 ############################
+out_dir = "figures/"
+if not os.path.isdir(out_dir):
+    os.makedirs(out_dir)
 plt.rcParams.update({'font.size': 16})
 
 # Reference solution
@@ -117,7 +163,7 @@ ax.set_yticks(ytick_loc)
 ax.set_yticklabels(V.tabulate_dof_coordinates()[ytick_loc, 0])
 ax.set_aspect("auto")
 plt.tight_layout(pad=0)
-plt.savefig(filename + "ref.png")
+plt.savefig(out_dir + "nu_" + str(nu) + "_sol_ref.png")
 plt.close()
 
 # Projected ROM solution
@@ -134,12 +180,12 @@ ax.set_yticks(ytick_loc)
 ax.set_yticklabels(V.tabulate_dof_coordinates()[ytick_loc, 0])
 ax.set_aspect("auto")
 plt.tight_layout(pad=0)
-plt.savefig(filename + method + "_sol.png")
+plt.savefig(out_dir + "nu_" + str(nu) + "_sol_n_" + str(r) + ".png")
 plt.close()
 
 # Error
 fig, ax = plt.subplots()
-im = ax.imshow(np.abs(u_proj - u_ref), norm=matplotlib.colors.LogNorm())
+im = ax.imshow(np.abs(u_proj - u_ref), norm=matplotlib.colors.LogNorm(), cmap='jet')
 fig.colorbar(im)
 ax.set_xlabel("$t$")
 ax.set_ylabel("$x$")
@@ -150,5 +196,5 @@ ax.set_yticks(ytick_loc)
 ax.set_yticklabels(V.tabulate_dof_coordinates()[ytick_loc, 0])
 ax.set_aspect("auto")
 plt.tight_layout(pad=0)
-plt.savefig(filename + method + "_err.png")
+plt.savefig(out_dir + "nu_" + str(nu) + "_err_n_" + str(r) + ".png")
 plt.close()
