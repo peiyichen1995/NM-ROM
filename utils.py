@@ -4,7 +4,7 @@ import h5py
 from fenics import *
 import numpy as np
 import scipy as sp
-from sklearn.model_selection import train_test_split
+
 
 def read_mesh_and_function(file_name, var_name):
 
@@ -32,17 +32,9 @@ def read_mesh_and_function(file_name, var_name):
     return mesh, solution
 
 
-def POD(snapshots, TOL=0):
+def POD(snapshots, num_bases):
     Phi, svals, _ = sp.linalg.svd(snapshots, full_matrices=False)
-
-    # Find pod dimension that gives an error below the tolerance
-    dim = 1
-    err = 1 - np.sum(np.power(svals[:dim], 2)) / np.sum(np.power(svals, 2))
-    while (err > TOL and dim < len(svals)):
-        dim += 1
-        err = 1 - np.sum(np.power(svals[:dim], 2)) / np.sum(np.power(svals, 2))
-
-    return Phi[:, :dim], svals[:dim]
+    return Phi[:, :num_bases], svals[:num_bases]
 
 
 def assemble_reduced_form(form, Phi):

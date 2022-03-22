@@ -24,11 +24,13 @@ mesh, u_ref = read_mesh_and_function(filename + "FOM", "u")
 # r: number of dofs in the reduced order model
 ############################
 print("Performing proper-orthogonal decomposition")
-TOL = 1e-12
-Phi, svals = POD(u_ref, TOL)
-R, r = Phi.shape
+r = 80
+Phi, svals = POD(u_ref, r)
+R, _ = Phi.shape
+err = 1 - np.sum(np.power(svals, 2)) / \
+    np.sum(np.diag(np.matmul(u_ref.T, u_ref)))
 print("{0:d} most important modes selected with a tolerance of {1:.3E}".format(
-    len(svals), TOL))
+    r, err))
 
 ############################
 # Function space
@@ -89,9 +91,8 @@ u_red = solve_ivp(rhs_red, (t_start, t_final), u0_red,
 
 outfile = XDMFFile(filename + method + ".xdmf")
 u_proj = np.zeros((V.dim(), u_red.y.shape[1]))
+print("Mapping and writing ROM solution...")
 for i in range(u_red.y.shape[1]):
-    print("Mapping and writing ROM solution at t = {0:.4E}".format(
-        t_sequence[i]))
     u_proj[:, i] = Phi.dot(u_red.y[:, i])
     u.vector().set_local(u_proj[:, i])
     outfile.write(u, t_sequence[i])
@@ -105,7 +106,7 @@ plt.rcParams.update({'font.size': 16})
 
 # Reference solution
 fig, ax = plt.subplots()
-im = ax.imshow(u_ref)
+im = ax.imshow(u_ref, vmin=1, vmax=2, cmap='jet')
 cb_ref = fig.colorbar(im)
 ax.set_xlabel("$t$")
 ax.set_ylabel("$x$")
@@ -121,7 +122,7 @@ plt.close()
 
 # Projected ROM solution
 fig, ax = plt.subplots()
-im = ax.imshow(u_proj)
+im = ax.imshow(u_proj, vmin=1, vmax=2, cmap='jet')
 cb = fig.colorbar(im)
 cb.set_ticks(cb_ref.get_ticks())
 ax.set_xlabel("$t$")
