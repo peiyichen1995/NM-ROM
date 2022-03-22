@@ -1,5 +1,7 @@
+from model_definition import *
 from flax.training import train_state, checkpoints
 from flax.core.frozen_dict import FrozenDict
+
 import numpy as np
 
 import h5py
@@ -8,6 +10,7 @@ from fenics import *
 import matplotlib.pyplot as plt
 
 import argparse
+
 
 def read_mesh_and_function(file_name, var_name):
 
@@ -56,7 +59,6 @@ M1 = 100
 M2 = 100
 n_epoch = 40000
 
-from model_definition import *
 
 def model():
     return VAE(encoder_latents=[M1], decoder_latents=[M2], N=N, n=n, n_sigmas=n_sigmas)
@@ -84,26 +86,33 @@ best_params = best_params.copy(params)
 
 CKPT_DIR = "nu_" + str(nu) + "_n_" + str(n) + "_n_sigmas_" + str(n_sigmas)
 
+loss_history = []
 for i in range(n_epoch):
     loss_val, grads = loss_grad_fn(params, u_train)
+    loss_history.append(loss_val)
     if loss_val < min_loss:
         min_loss = loss_val
         best_params = best_params.copy(params)
     updates, opt_state = tx.update(grads, opt_state)
     params = optax.apply_updates(params, updates)
     if i % 10 == 0:
-        print('step: {}, loss = {:.6E}, min_loss = {:.6E}'.format(i, loss_val, min_loss))
+        print('step: {}, loss = {:.6E}, min_loss = {:.6E}'.format(
+            i, loss_val, min_loss))
     if i % 100 == 0:
         state = train_state.TrainState.create(apply_fn=model().apply,
-                                            params=params,
-                                            tx=tx)
+                                              params=params,
+                                              tx=tx)
         checkpoints.save_checkpoint(
             ckpt_dir=CKPT_DIR, target=state, step=i, overwrite=True)
     if loss_val < 1e-6:
         break
 
 state = train_state.TrainState.create(apply_fn=model().apply,
-                                    params=best_params,
-                                    tx=tx)
+                                      params=best_params,
+                                      tx=tx)
 checkpoints.save_checkpoint(
     ckpt_dir=CKPT_DIR, target=state, step=n_epoch, overwrite=True)
+
+with open(CKPT_DIR + '/loss.csv', 'w') as f:
+    for loss in loss_history:
+        f.write("{:.6E}\n".format(loss))
