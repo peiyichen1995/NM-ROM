@@ -37,7 +37,7 @@ class Encoder(nn.Module):
 def gaussian_kernel(window_size, sigma):
     mu = window_size / 2
     x = jnp.arange(window_size)
-    window = jnp.exp((-((x - mu)**2)) / (2 * sigma**2))
+    window = nn.relu(- (x - mu)**2 / (0.5 * sigma * window_size)**2 + 1)
     window = window / jnp.sum(window)
     return window
 
@@ -49,44 +49,70 @@ def dynamic_gaussian_smooth(xs, windows):
     return jnp.hstack(xs)
 
 
+# class Decoder(nn.Module):
+#     latents: Sequence[int]
+#     N: int
+#     n: int
+#     n_sigmas: int
+#
+#     def setup(self):
+#         self.split_index = np.linspace(
+#             0, self.N, self.n_sigmas, endpoint=False, dtype=int)[1:]
+#
+#     @nn.compact
+#     def __call__(self, x):
+#         sigmas = nn.Dense(self.latents[0], dtype=jnp.float64,
+#                           param_dtype=jnp.float64)(x)
+#         sigmas = nn.swish(sigmas)
+#         sigmas = nn.Dense(self.n_sigmas, dtype=jnp.float64,
+#                           param_dtype=jnp.float64)(sigmas)
+#         sigmas = sigmas * sigmas
+#
+#         x = nn.Dense(self.N, dtype=jnp.float64, param_dtype=jnp.float64)(x)
+#
+#         windows = jax.vmap(gaussian_kernel, in_axes=(None, 0))(
+#             int(self.N / self.n_sigmas), sigmas)
+#         x = dynamic_gaussian_smooth(jnp.split(x, self.split_index), windows)
+#
+#         return x
+
+
 class Decoder(nn.Module):
-    latents: Sequence[int]
     N: int
     n: int
-    n_sigmas: int
-
-    def setup(self):
-        self.split_index = np.linspace(
-            0, self.N, self.n_sigmas, endpoint=False, dtype=int)[1:]
 
     @nn.compact
     def __call__(self, x):
-        sigmas = nn.Dense(self.latents[0], dtype=jnp.float64,
-                          param_dtype=jnp.float64)(x)
-        sigmas = nn.swish(sigmas)
-        sigmas = nn.Dense(self.n_sigmas, dtype=jnp.float64,
-                          param_dtype=jnp.float64)(sigmas)
+        sub_weights = self.param('sub_weight', lambda key: jnp.ones((self.n,)))
+        sub_bias = self.param('sub_bias', lambda key: jnp.zeros((self.N,)))
 
-        x = nn.Dense(self.N, dtype=jnp.float64, param_dtype=jnp.float64)(x)
+        sub_sigmas = nn.Dense(
+            self.N, name='sub_sigma_1', dtype=jnp.float64, param_dtype=jnp.float64)(x)
+        sub_sigmas = nn.sigmoid(sub_sigmas)
+        sub_sigmas = nn.Dense(
+            self.n, name='sub_sigma_2', dtype=jnp.float64, param_dtype=jnp.float64)(sub_sigmas)
+        sub_sigmas = nn.sigmoid(sub_sigmas)
 
-        windows = jax.vmap(gaussian_kernel, in_axes=(None, 0))(
-            int(self.N / self.n_sigmas), sigmas)
-        x = dynamic_gaussian_smooth(jnp.split(x, self.split_index), windows)
+        sub_windows = jax.vmap(gaussian_kernel, in_axes=(
+            None, 0))(self.N / 20, sub_sigmas)
+        x_net = jnp.zeros((self.N,))
+        for i in range(self.n):
+            sub_x = nn.Dense(self.N, dtype=jnp.float64,
+                             param_dtype=jnp.float64)([x[i]])
+            x_net = x_net + sub_weights[i] * \
+                jnp.convolve(sub_x, sub_windows[i], mode='same')
 
-        return x
+        return x_net + sub_bias
 
 
 class VAE(nn.Module):
     encoder_latents: Sequence[int]
-    decoder_latents: Sequence[int]
     N: int
     n: int
-    n_sigmas: int
 
     def setup(self):
         self.encoder = Encoder(self.encoder_latents, self.N, self.n)
-        self.decoder = Decoder(self.decoder_latents,
-                               self.N, self.n, self.n_sigmas)
+        self.decoder = Decoder(self.N, self.n)
 
     def encode(self, x):
         return self.encoder(x)

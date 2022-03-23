@@ -41,11 +41,9 @@ def read_mesh_and_function(file_name, var_name):
 parser = argparse.ArgumentParser()
 parser.add_argument('nu', type=float)
 parser.add_argument('n', type=int)
-parser.add_argument('n_sigma', type=int)
 args = parser.parse_args()
 nu = args.nu
 n = args.n
-n_sigmas = args.n_sigma
 
 A = 0.5
 mesh, u_ref = read_mesh_and_function(
@@ -53,14 +51,13 @@ mesh, u_ref = read_mesh_and_function(
 u_ref = u_ref.T
 
 time_steps, N = u_ref.shape
-u_train = u_ref[np.arange(0, time_steps, 5)]
+u_train = np.copy(u_ref)
 n_train = len(u_train)
-M1 = 2000
-M2 = N
+M1 = 100
 
 
 def model():
-    return VAE(encoder_latents=[M1], decoder_latents=[M2], N=N, n=n, n_sigmas=n_sigmas)
+    return VAE(encoder_latents=[M1], N=N, n=n)
 
 
 @jax.jit
@@ -76,26 +73,29 @@ def rel_err(x, xt):
 
 
 n_epoch = 40000
-n_batches = 5
+n_batches = 25
 learning_rate = 0.001
 learning_rate_cut_factor = 10
 max_patience = 200
 training_tol = 1e-4
 
-params = model().init(random.PRNGKey(0), u_train[0])
+params = model().init(random.PRNGKey(0), u_train[46])
 tx = optax.adam(learning_rate)
 opt_state = tx.init(params)
 loss_grad_fn = jax.value_and_grad(loss_fn)
-min_loss = loss_fn(params, u_train)
+min_loss = 1e6
 best_params = FrozenDict()
 best_params = best_params.copy(params)
 batch_indices = np.linspace(0, u_train.shape[0], n_batches, endpoint=False)[1:]
-CKPT_DIR = "nu_" + str(nu) + "_n_" + str(n) + "_n_sigmas_" + str(n_sigmas)
+CKPT_DIR = "nu_" + str(nu) + "_n_" + str(n)
 
 loss_history = []
 patience = 0
 for i in range(n_epoch):
     if patience > max_patience:
+        if learning_rate < 1e-12:
+            print('The learning rate is too small. Let us stop here.')
+            break
         learning_rate = learning_rate / learning_rate_cut_factor
         print('Min loss has not dropped in {:} epochs. Reduce learning rate to {:}'.format(
             max_patience, learning_rate))
@@ -118,9 +118,9 @@ for i in range(n_epoch):
     else:
         patience = patience + 1
     loss_history.append(loss_val)
-    if i % 10 == 0:
-        print('step: {}, loss = {:.6E}, min_loss = {:.6E}'.format(
-            i, loss_val, min_loss))
+    # if i % 10 == 0:
+    print('Epoch {}, loss = {:.6E}, min_loss = {:.6E}'.format(
+        i, loss_val, min_loss))
     if i % 100 == 0:
         state = train_state.TrainState.create(apply_fn=model().apply,
                                               params=params,
