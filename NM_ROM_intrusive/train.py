@@ -1,68 +1,71 @@
-from model_definition import *
-from flax.training import train_state, checkpoints
-from flax.core.frozen_dict import FrozenDict
-
-import numpy as np
-
-import h5py
-from fenics import *
-
-import matplotlib.pyplot as plt
 
 import argparse
 
+import numpy as np
 
-def read_mesh_and_function(file_name, var_name):
+# machine learning packages
+import jax  # nopep8
+import jax.numpy as jnp  # nopep8
+jax.config.update("jax_enable_x64", True)  # nopep8
+from flax.core.frozen_dict import FrozenDict  # nopep8
+from flax.training import train_state, checkpoints  # nopep8
+import optax  # nopep8
 
-    # Open solution file
-    infile = XDMFFile(file_name + ".xdmf")
-    infile_h5 = h5py.File(file_name + ".h5", "r")
-    t_steps = len(infile_h5[var_name].keys())
-
-    # Read in mesh
-    mesh = Mesh()
-    infile.read(mesh)
-
-    # Read function
-    V = FunctionSpace(mesh, "CG", 1)
-    u = Function(V)
-    solution = np.zeros((V.dim(), t_steps))
-    for i in range(t_steps):
-        infile.read_checkpoint(u, var_name, i - t_steps + 1)
-        solution[:, i] = u.vector().get_local()
-
-    # Clean up
-    infile.close()
-    infile_h5.close()
-
-    return mesh, solution
+# our surrogates and FEM stuff
+import sys  # nopep8
+sys.path.append('..')  # nopep8
+from fenics import XDMFFile, Mesh  # nopep8
+from fenics import FunctionSpace, Function  # nopep8
+from surrogates import NonlinearReducedBasisSurrogate as NRBS  # nopep8
 
 
+# Read parameters from cli args
 parser = argparse.ArgumentParser()
 parser.add_argument('nu', type=float)
 parser.add_argument('n', type=int)
 args = parser.parse_args()
+
+# Read mesh and solution
 nu = args.nu
-n = args.n
-
 A = 0.5
-mesh, u_ref = read_mesh_and_function(
-    "../output/burgers_1D/nu_" + str(nu) + "/FOM", "u")
-u_ref = u_ref.T
+t_start = 0.0
+t_final = 0.5
+t_steps = 501
+ts = np.linspace(t_start, t_final, t_steps)
 
-time_steps, N = u_ref.shape
+file_name = "../output/burgers_1D/nu_" + str(nu) + "/FOM"
+xdmffile = XDMFFile(file_name + ".xdmf")
+
+mesh = Mesh()
+xdmffile.read(mesh)
+V = FunctionSpace(mesh, 'CG', 1)
+X = V.tabulate_dof_coordinates()[:, 0]
+u = Function(V)
+N = V.dim()
+
+u_ref = np.zeros((t_steps, N))
+for i in range(t_steps):
+    xdmffile.read_checkpoint(u, 'u', i)
+    u_ref[i] = u.vector().get_local()
+
+xdmffile.close()
+
+# Training data and surrogate
 u_train = np.copy(u_ref)
 n_train = len(u_train)
+
+n = args.n
 M1 = 100
 
 
-def model():
-    return VAE(encoder_latents=[M1], N=N, n=n)
+def surrogate():
+    return NRBS(encoder_latents=[M1], N=N, n=n)
 
 
+# Loss function
 @jax.jit
 def loss_fn(params, x):
-    xt = jax.vmap(model().apply, in_axes=(None, 0))(params, x)
+    xt = jax.vmap(surrogate().apply, in_axes=(None, 0))(params, x)
     errors = jax.vmap(rel_err, in_axes=(0, 0), out_axes=0)(x, xt)
     l = jnp.sum(errors**2) / x.shape[0]
     return l
@@ -72,14 +75,15 @@ def rel_err(x, xt):
     return jnp.linalg.norm(x - xt)
 
 
-n_epoch = 40000
+# Training parameters
+n_epoch = 10000
 n_batches = 25
 learning_rate = 0.001
 learning_rate_cut_factor = 10
 max_patience = 200
 training_tol = 1e-4
 
-params = model().init(random.PRNGKey(0), u_train[46])
+params = surrogate().init(jax.random.PRNGKey(0), u_train[0])
 tx = optax.adam(learning_rate)
 opt_state = tx.init(params)
 loss_grad_fn = jax.value_and_grad(loss_fn)
@@ -89,6 +93,8 @@ best_params = best_params.copy(params)
 batch_indices = np.linspace(0, u_train.shape[0], n_batches, endpoint=False)[1:]
 CKPT_DIR = "nu_" + str(nu) + "_n_" + str(n)
 
+
+# Start training
 loss_history = []
 patience = 0
 for i in range(n_epoch):
@@ -118,11 +124,10 @@ for i in range(n_epoch):
     else:
         patience = patience + 1
     loss_history.append(loss_val)
-    # if i % 10 == 0:
     print('Epoch {}, loss = {:.6E}, min_loss = {:.6E}'.format(
         i, loss_val, min_loss))
     if i % 100 == 0:
-        state = train_state.TrainState.create(apply_fn=model().apply,
+        state = train_state.TrainState.create(apply_fn=surrogate().apply,
                                               params=params,
                                               tx=tx)
         checkpoints.save_checkpoint(
@@ -130,7 +135,8 @@ for i in range(n_epoch):
     if loss_val < training_tol:
         break
 
-state = train_state.TrainState.create(apply_fn=model().apply,
+# Save the final training state
+state = train_state.TrainState.create(apply_fn=surrogate().apply,
                                       params=best_params,
                                       tx=tx)
 checkpoints.save_checkpoint(

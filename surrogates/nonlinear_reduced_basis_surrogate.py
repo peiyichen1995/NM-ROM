@@ -43,8 +43,7 @@ class NonlinearReducedBasisSurrogate(nn.Module):
         def bubble(self, window_size, s):
             mu = window_size / 2
             x = jnp.arange(window_size)
-            window = nn.relu(- (x - mu)**2 /
-                             (0.5 * s * window_size)**2 + 1)
+            window = nn.relu(- (x - mu)**2 / (s * mu)**2 + 1)
             window = window / jnp.sum(window)
             return window
 
@@ -62,7 +61,7 @@ class NonlinearReducedBasisSurrogate(nn.Module):
             sub_sigmas = nn.sigmoid(sub_sigmas)
 
             sub_windows = jax.vmap(self.bubble, in_axes=(
-                None, 0))(self.N / 20, sub_sigmas)
+                None, 0))(self.N, sub_sigmas)
             x_net = jnp.zeros((self.N,))
             for i in range(self.n):
                 sub_x = nn.Dense(self.N, dtype=jnp.float64,
