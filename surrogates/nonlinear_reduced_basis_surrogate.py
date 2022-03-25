@@ -61,7 +61,7 @@ class NonlinearReducedBasisSurrogate(nn.Module):
             sub_sigmas = nn.sigmoid(sub_sigmas)
 
             sub_windows = jax.vmap(self.bubble, in_axes=(
-                None, 0))(self.N, sub_sigmas)
+                None, 0))(self.N / 20, sub_sigmas)
             x_net = jnp.zeros((self.N,))
             for i in range(self.n):
                 sub_x = nn.Dense(self.N, dtype=jnp.float64,
