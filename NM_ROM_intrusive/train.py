@@ -1,4 +1,3 @@
-
 import argparse
 
 import numpy as np
@@ -59,7 +58,7 @@ M1 = 100
 
 
 def surrogate():
-    return NRBS(encoder_latents=[M1], N=N, n=n)
+    return NRBS(encoder_latents=[M1], decoder_latents=[N], N=N, n=n, mu=N/40)
 
 
 # Loss function
